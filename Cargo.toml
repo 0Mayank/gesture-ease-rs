@@ -18,8 +18,14 @@ features = ["jpeg"]
 version = "1.0"
 features = ["derive"]
 
+[dependencies.glam]
+version = "0.27" # enable fastmath?
+features = ["approx"]
+
 [dependencies]
 byteorder = "1.5"
 error-stack = "0.4"
 flume = "0.11"
 serde_json = "1.0"
+toml = "0.8"
+rust-3d = "0.34"

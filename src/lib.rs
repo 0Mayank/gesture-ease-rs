@@ -1,6 +1,8 @@
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use error_stack::{Result, ResultExt};
 use flume::{Receiver, Sender};
+use glam::{Quat, Vec3A};
+use head_detection::HeadDetection;
 use std::{
     collections::HashSet,
     fmt,
@@ -11,12 +13,54 @@ use std::{
 };
 
 mod error;
+
+pub mod config;
 pub mod gesture_recognition;
 pub mod head_detection;
 pub mod hpe;
+pub mod math;
 
 pub use error::GError;
-pub use hpe::HeadPoseEstimation;
+pub use gesture_recognition::{Gesture, GestureDetection, GesturePrediction, GesturePreds};
+pub use hpe::{HPEPreds, HeadPoseEstimation, HpePrediction};
+
+pub struct ImageCoords {
+    pub x: f32,
+    pub y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl ImageCoords {
+    pub fn new(x: f32, y: f32, w: u32, h: u32) -> Self {
+        Self {
+            x,
+            y,
+            w: w as f32,
+            h: h as f32,
+        }
+    }
+
+    pub fn x_max(&self) -> f32 {
+        self.w
+    }
+
+    pub fn y_max(&self) -> f32 {
+        self.h
+    }
+
+    pub fn x_mid(&self) -> f32 {
+        self.x_max() / 2.0
+    }
+
+    pub fn y_mid(&self) -> f32 {
+        self.y_max() / 2.0
+    }
+
+    pub fn coords_from_mid(&self) -> (f32, f32) {
+        (self.x - self.x_mid(), self.y - self.y_mid())
+    }
+}
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum Model {
@@ -24,8 +68,6 @@ pub enum Model {
     GestureRecognition,
     HeadDetection,
 }
-
-impl Model {}
 
 impl From<&str> for Model {
     fn from(value: &str) -> Self {
@@ -53,6 +95,8 @@ pub struct Models {
     num: usize,
     listener: UnixListener,
     hpe: Option<HeadPoseEstimation>,
+    gesture: Option<GestureDetection>,
+    head: Option<HeadDetection>,
 }
 
 impl Models {
@@ -60,6 +104,8 @@ impl Models {
         Self {
             pset: HashSet::new(),
             hpe: None,
+            gesture: None,
+            head: None,
             num,
             listener,
         }
@@ -68,6 +114,22 @@ impl Models {
     pub fn hpe(&self) -> Result<HeadPoseEstimation, GError> {
         if let Some(hpe) = &self.hpe {
             Ok(hpe.clone())
+        } else {
+            Err(GError::ModelUninit).change_context(GError::ModelUninit)
+        }
+    }
+
+    pub fn gesture(&self) -> Result<GestureDetection, GError> {
+        if let Some(gesture) = &self.gesture {
+            Ok(gesture.clone())
+        } else {
+            Err(GError::ModelUninit).change_context(GError::ModelUninit)
+        }
+    }
+
+    pub fn head_detection(&self) -> Result<HeadDetection, GError> {
+        if let Some(head) = &self.head {
+            Ok(head.clone())
         } else {
             Err(GError::ModelUninit).change_context(GError::ModelUninit)
         }
@@ -82,7 +144,20 @@ impl Models {
 
                 self.hpe = Some(model);
             }
-            _ => {}
+            Model::GestureRecognition => {
+                let model = GestureDetection::new(stream);
+
+                model.run();
+
+                self.gesture = Some(model)
+            }
+            Model::HeadDetection => {
+                let model = HeadDetection::new(stream);
+
+                model.run();
+
+                self.head = Some(model)
+            }
         }
         self.pset.insert(model);
     }
@@ -187,4 +262,16 @@ trait WantIpc {
 
         Ok(msg)
     }
+}
+
+pub trait GlamPosition {
+    fn pos(&self) -> &Vec3A;
+}
+
+pub trait GlamQuat {
+    fn quat(&self) -> Quat;
+}
+
+pub trait ImagePosition {
+    fn image_coords(&self, w: u32, h: u32) -> ImageCoords;
 }

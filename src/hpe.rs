@@ -9,7 +9,7 @@ use error_stack::Result;
 use flume::{unbounded, Receiver, Sender};
 use serde::Deserialize;
 
-use crate::{GError, ImageProcessor, WantIpc};
+use crate::{GError, GlamQuat, ImagePosition, ImageProcessor, WantIpc};
 
 #[derive(Clone)]
 pub struct HeadPoseEstimation {
@@ -115,4 +115,16 @@ pub struct HpePrediction {
     pub pitch: f32,
     pub yaw: f32,
     pub roll: f32,
+}
+
+impl ImagePosition for HpePrediction {
+    fn image_coords(&self, w: u32, h: u32) -> crate::ImageCoords {
+        crate::ImageCoords::new((self.x1 + self.x2) / 2.0, (self.y1 + self.y2) / 2.0, w, h)
+    }
+}
+
+impl GlamQuat for HpePrediction {
+    fn quat(&self) -> glam::Quat {
+        glam::Quat::from_euler(glam::EulerRot::ZYX, self.yaw, self.pitch, self.roll)
+    }
 }
