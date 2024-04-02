@@ -18,7 +18,7 @@ use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";
-    let num_processes = 2;
+    let num_processes = 3;
 
     if std::fs::metadata(socket_path).is_ok() {
         println!("Socket is already present. Deleting...");
@@ -31,7 +31,7 @@ fn main() {
     let mut process_map = Models::new(num_processes, listener);
 
     let index1 = CameraIndex::Index(0);
-    let index2 = CameraIndex::Index(1);
+    let index2 = CameraIndex::Index(0);
     let height = 720;
     let width = 1280;
     let resolution = Resolution::new(width, height);
