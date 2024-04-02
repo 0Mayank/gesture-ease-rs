@@ -4,7 +4,7 @@ use glam::Vec3A;
 use rust_3d::{BoundingBox3D, HasBoundingBox3D, HasBoundingBox3DMaybe, Point3D};
 use serde::Deserialize;
 
-use crate::GlamPosition;
+use crate::HasGlamPosition;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Device {
@@ -31,7 +31,7 @@ impl Device {
     }
 }
 
-impl GlamPosition for Device {
+impl HasGlamPosition for Device {
     fn pos(&self) -> &Vec3A {
         self.pos.get_or_init(|| {
             Vec3A::new(

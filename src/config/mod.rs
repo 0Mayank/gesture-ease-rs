@@ -58,10 +58,8 @@ mod tests {
     fn parse_config() {
         let config_toml = r#"
         [camera1]
-        focal_length = 50
         fov_x = 0.3
         fov_y = 0.3
-        pixel_size = 3
         pos_x = 0
         pos_y = 0
         pos_z = 0
@@ -70,10 +68,8 @@ mod tests {
         roll = 0
 
         [camera2]
-        focal_length = 50
         fov_x = 0.3
         fov_y = 0.3
-        pixel_size = 3
         pos_x = 3
         pos_y = 3
         pos_z = 3

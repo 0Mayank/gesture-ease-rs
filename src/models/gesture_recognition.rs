@@ -9,18 +9,18 @@ use error_stack::Result;
 use flume::{unbounded, Receiver, Sender};
 use serde::Deserialize;
 
-use crate::{GError, GlamQuat, ImagePosition, ImageProcessor, WantIpc};
+use crate::{traits::WantIpc, GError, HasImagePosition, ImageProcessor};
 
 #[derive(Clone)]
-pub struct HeadPoseEstimation {
+pub struct GestureDetection {
     image_sender: Sender<Arc<[u8]>>,
     image_receiver: Receiver<Arc<[u8]>>,
-    response_sender: Sender<HPEPreds>,
-    response_receiver: Receiver<HPEPreds>,
+    response_sender: Sender<GesturePreds>,
+    response_receiver: Receiver<GesturePreds>,
     unix_stream: Arc<UnixStream>,
 }
 
-impl HeadPoseEstimation {
+impl GestureDetection {
     pub fn new(unix_stream: UnixStream) -> Self {
         let (image_sender, image_receiver) = unbounded();
         let (response_sender, response_receiver) = unbounded();
@@ -37,14 +37,14 @@ impl HeadPoseEstimation {
 
     pub fn run(&self) -> JoinHandle<()> {
         let instance = self.clone();
-        println!("HPE model connected");
+        println!("Gesture Detection model connected");
 
         thread::spawn(move || loop {
             let _img = instance.recv_img().unwrap();
 
             instance.send_ipc(&_img).unwrap();
             let res = instance.recv_ipc().unwrap();
-            let res: HPEPreds = serde_json::from_slice(&res).unwrap();
+            let res: GesturePreds = serde_json::from_slice(&res).unwrap();
 
             instance.send_response(res).unwrap();
         })
@@ -54,13 +54,13 @@ impl HeadPoseEstimation {
         self.send_img(img)
     }
 
-    pub fn recv(&self) -> Result<HPEPreds, GError> {
+    pub fn recv(&self) -> Result<GesturePreds, GError> {
         self.recv_response()
     }
 }
 
-impl ImageProcessor for HeadPoseEstimation {
-    type Response = HPEPreds;
+impl ImageProcessor for GestureDetection {
+    type Response = GesturePreds;
 
     fn image_sender(&self) -> &Sender<Arc<[u8]>> {
         &self.image_sender
@@ -79,56 +79,75 @@ impl ImageProcessor for HeadPoseEstimation {
     }
 }
 
-impl WantIpc for HeadPoseEstimation {
+impl WantIpc for GestureDetection {
     fn unix_stream(&self) -> &UnixStream {
         &self.unix_stream
     }
 }
 
 #[derive(Default, Debug, Deserialize)]
-pub struct HPEPreds {
-    prediction: Vec<HpePrediction>,
+pub struct GesturePreds {
+    pub prediction: Vec<GesturePrediction>,
 }
 
-impl Deref for HPEPreds {
-    type Target = Vec<HpePrediction>;
+impl Deref for GesturePreds {
+    type Target = Vec<GesturePrediction>;
 
     fn deref(&self) -> &Self::Target {
         &self.prediction
     }
 }
 
-impl DerefMut for HPEPreds {
+impl DerefMut for GesturePreds {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.prediction
     }
 }
 
-#[derive(Default, Debug, Deserialize)]
-pub struct HpePrediction {
-    pub x1: f32,
-    pub x2: f32,
-    pub y1: f32,
-    pub y2: f32,
-    pub conf: f32,
-    pub class: f32,
-    pub pitch: f32,
-    pub yaw: f32,
-    pub roll: f32,
+#[derive(Default, Debug, Deserialize, Clone)]
+pub enum Gesture {
+    Toggle,
+    #[default]
+    None,
 }
 
-impl ImagePosition for HpePrediction {
+impl Gesture {
+    pub fn is_toggle(&self) -> bool {
+        match self {
+            Self::Toggle => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        match self {
+            Self::None => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Default, Debug, Deserialize)]
+pub struct GesturePrediction {
+    pub nose_x: f32,
+    pub nose_y: f32,
+    pub gesture: Gesture,
+}
+
+impl Deref for GesturePrediction {
+    type Target = Gesture;
+
+    fn deref(&self) -> &Self::Target {
+        &self.gesture
+    }
+}
+
+impl HasImagePosition for GesturePrediction {
     fn image_x(&self) -> f32 {
-        (self.x1 + self.x2) / 2.0
+        self.nose_x
     }
 
     fn image_y(&self) -> f32 {
-        (self.y1 + self.y2) / 2.0
-    }
-}
-
-impl GlamQuat for HpePrediction {
-    fn quat(&self) -> glam::Quat {
-        glam::Quat::from_euler(glam::EulerRot::ZYX, self.yaw, self.pitch, self.roll)
+        self.nose_y
     }
 }

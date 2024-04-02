@@ -1,18 +1,20 @@
-use gesture_ease::config::Config;
-use gesture_ease::head_detection::HeadPreds;
-use gesture_ease::math::{
-    angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
-};
-use gesture_ease::{GError, GesturePreds, GlamQuat, HPEPreds, ImagePosition, Models};
 use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{
     CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType, Resolution,
 };
 use nokhwa::Camera;
+
 use std::io::Cursor;
 use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::Instant;
+
+use gesture_ease::config::Config;
+use gesture_ease::math::{
+    angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
+};
+use gesture_ease::models::{GesturePreds, HPEPreds, HeadPreds};
+use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";

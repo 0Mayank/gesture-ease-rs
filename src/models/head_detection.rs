@@ -9,7 +9,7 @@ use error_stack::Result;
 use flume::{unbounded, Receiver, Sender};
 use serde::Deserialize;
 
-use crate::{GError, ImagePosition, ImageProcessor, WantIpc};
+use crate::{traits::WantIpc, GError, HasImagePosition, ImageProcessor};
 
 #[derive(Clone)]
 pub struct HeadDetection {
@@ -110,7 +110,7 @@ pub struct HeadPrediction {
     pub nose_y: f32,
 }
 
-impl ImagePosition for HeadPrediction {
+impl HasImagePosition for HeadPrediction {
     fn image_y(&self) -> f32 {
         self.nose_y
     }

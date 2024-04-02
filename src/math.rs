@@ -1,12 +1,12 @@
 use std::cmp::Ordering;
 
 use error_stack::{Result, ResultExt};
-use glam::{EulerRot, Quat, Vec3A, Vec3Swizzles};
+use glam::{EulerRot, Quat, Vec3A};
 use rust_3d::{IsNormalized3D, Line3D, Norm3D, Point3D};
 
 use crate::{
     config::{CameraProperties, Config, Device},
-    error, GError, GlamPosition, GlamQuat, ImageCoords, ImagePosition,
+    error, GError, HasGlamPosition, HasGlamQuat, HasImagePosition, ImageCoords,
 };
 
 pub const BASE_FORWARD_VECTOR: Vec3A = Vec3A::X;
@@ -133,7 +133,7 @@ pub fn get_closest_device_in_los(config: &Config, line: Line) -> Option<Device> 
     closest_in_dir
 }
 
-pub fn sort_align<T: ImagePosition>(v: &mut Vec<T>, theta: f32) {
+pub fn sort_align<T: HasImagePosition>(v: &mut Vec<T>, theta: f32) {
     let y = |x: f32, y: f32| x * theta.cos() + y * theta.sin();
     let x = |x: f32, y: f32| x * theta.sin() + y * theta.cos();
 

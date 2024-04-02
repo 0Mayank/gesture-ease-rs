@@ -1,28 +1,23 @@
-use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use error_stack::{Result, ResultExt};
-use flume::{Receiver, Sender};
-use glam::{Quat, Vec3A};
-use head_detection::HeadDetection;
 use std::{
     collections::HashSet,
     fmt,
-    io::{Read, Write},
+    io::Read,
     os::unix::net::{UnixListener, UnixStream},
-    sync::Arc,
-    u8, usize,
+    usize,
 };
+
+use models::{GestureDetection, HeadDetection, HeadPoseEstimation};
 
 mod error;
 
 pub mod config;
-pub mod gesture_recognition;
-pub mod head_detection;
-pub mod hpe;
 pub mod math;
+pub mod models;
+pub mod traits;
 
 pub use error::GError;
-pub use gesture_recognition::{Gesture, GestureDetection, GesturePrediction, GesturePreds};
-pub use hpe::{HPEPreds, HeadPoseEstimation, HpePrediction};
+pub use traits::{HasGlamPosition, HasGlamQuat, HasImagePosition, ImageProcessor};
 
 pub struct ImageCoords {
     pub x: f32,
@@ -135,7 +130,7 @@ impl Models {
         }
     }
 
-    pub fn add(&mut self, model: Model, stream: UnixStream) {
+    pub fn add_model_process(&mut self, model: Model, stream: UnixStream) {
         match model {
             Model::HPE => {
                 let model = HeadPoseEstimation::new(stream);
@@ -176,106 +171,8 @@ impl Models {
                 .as_ref()
                 .into();
 
-            self.add(model, stream);
+            self.add_model_process(model, stream);
             println!("Processes connected: {}", self.len())
         }
     }
-}
-
-pub trait ImageProcessor {
-    type Response;
-
-    fn image_sender(&self) -> &Sender<Arc<[u8]>>;
-    fn image_receiver(&self) -> &Receiver<Arc<[u8]>>;
-    fn response_sender(&self) -> &Sender<Self::Response>;
-    fn response_receiver(&self) -> &Receiver<Self::Response>;
-
-    fn send_img(&self, img: Arc<[u8]>) -> Result<(), GError> {
-        self.image_sender()
-            .send(img)
-            .change_context(GError::CommError)
-    }
-
-    fn recv_img(&self) -> Result<Arc<[u8]>, GError> {
-        self.image_receiver()
-            .recv()
-            .change_context(GError::CommError)
-    }
-
-    // TODO: try without map_err
-    fn send_response(&self, res: Self::Response) -> Result<(), GError> {
-        self.response_sender()
-            .send(res)
-            .map_err(|_| GError::CommError)
-            .change_context(GError::CommError)
-            .attach("Failed to send response")
-    }
-
-    fn recv_response(&self) -> Result<Self::Response, GError> {
-        self.response_receiver()
-            .recv()
-            .change_context(GError::CommError)
-    }
-}
-
-trait WantIpc {
-    fn unix_stream(&self) -> &UnixStream;
-
-    // TODO: use little endian
-    fn send_ipc(&self, msg: &[u8]) -> Result<(), GError> {
-        let msg_len: u32 = msg.len() as u32;
-
-        self.unix_stream()
-            .write_u32::<NetworkEndian>(msg_len)
-            .change_context(GError::IpcError)?;
-
-        self.unix_stream()
-            .write(msg)
-            .change_context(GError::IpcError)?;
-
-        // self.unix_stream()
-        //     .shutdown(std::net::Shutdown::Write)
-        //     .change_context(GError::IpcError)?;
-
-        Ok(())
-    }
-    fn recv_ipc(&self) -> Result<Vec<u8>, GError> {
-        let mut msg = vec![];
-
-        let msg_len = self
-            .unix_stream()
-            .read_u32::<NetworkEndian>()
-            .change_context(GError::IpcError)? as usize;
-
-        let mut buf = [0; 1024];
-
-        let mut bytes_read = 0;
-
-        while bytes_read < msg_len {
-            bytes_read = self
-                .unix_stream()
-                .read(&mut buf)
-                .change_context(GError::IpcError)?;
-
-            msg.extend_from_slice(&buf[..bytes_read]);
-        }
-
-        Ok(msg)
-    }
-}
-
-pub trait GlamPosition {
-    fn pos(&self) -> &Vec3A;
-}
-
-pub trait GlamQuat {
-    fn quat(&self) -> Quat;
-}
-
-pub trait ImagePosition {
-    fn image_coords(&self, w: u32, h: u32) -> ImageCoords {
-        ImageCoords::new(self.image_x(), self.image_y(), w, h)
-    }
-    fn image_x(&self) -> f32;
-    fn image_y(&self) -> f32;
 }

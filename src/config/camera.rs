@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use glam::{EulerRot, Quat, Vec3A};
 use serde::Deserialize;
 
-use crate::{GlamPosition, GlamQuat};
+use crate::{HasGlamPosition, HasGlamQuat};
 
 #[derive(Deserialize, Debug)]
 pub struct CameraProperties {
@@ -51,14 +51,14 @@ impl CameraProperties {
     }
 }
 
-impl GlamPosition for CameraProperties {
+impl HasGlamPosition for CameraProperties {
     fn pos(&self) -> &Vec3A {
         self.pos
             .get_or_init(|| Vec3A::new(self.pos_x, self.pos_y, self.pos_z))
     }
 }
 
-impl GlamQuat for CameraProperties {
+impl HasGlamQuat for CameraProperties {
     fn quat(&self) -> Quat {
         *self
             .quat
