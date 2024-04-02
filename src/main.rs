@@ -31,7 +31,7 @@ fn main() {
     let mut process_map = Models::new(num_processes, listener);
 
     let index1 = CameraIndex::Index(0);
-    let index2 = CameraIndex::Index(0);
+    let index2 = CameraIndex::Index(1);
     let height = 720;
     let width = 1280;
     let resolution = Resolution::new(width, height);
