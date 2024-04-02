@@ -115,7 +115,7 @@ fn main() {
         });
 
         headposes = process_map.hpe().unwrap().recv().unwrap();
-        headposes.sort_by(|a, b| a.x1.partial_cmp(&b.x1).expect("NAN??"));
+        sort_align(&mut headposes, theta);
 
         // Now get the device in line of sight of each head
         let devices = headposes.iter().zip(positions).map(|(pose, position)| {
