@@ -273,5 +273,9 @@ pub trait GlamQuat {
 }
 
 pub trait ImagePosition {
-    fn image_coords(&self, w: u32, h: u32) -> ImageCoords;
+    fn image_coords(&self, w: u32, h: u32) -> ImageCoords {
+        ImageCoords::new(self.image_x(), self.image_y(), w, h)
+    }
+    fn image_x(&self) -> f32;
+    fn image_y(&self) -> f32;
 }

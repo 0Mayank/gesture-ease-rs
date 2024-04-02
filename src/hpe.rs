@@ -118,8 +118,12 @@ pub struct HpePrediction {
 }
 
 impl ImagePosition for HpePrediction {
-    fn image_coords(&self, w: u32, h: u32) -> crate::ImageCoords {
-        crate::ImageCoords::new((self.x1 + self.x2) / 2.0, (self.y1 + self.y2) / 2.0, w, h)
+    fn image_x(&self) -> f32 {
+        (self.x1 + self.x2) / 2.0
+    }
+
+    fn image_y(&self) -> f32 {
+        (self.y1 + self.y2) / 2.0
     }
 }
 

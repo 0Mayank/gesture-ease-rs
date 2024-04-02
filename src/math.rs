@@ -1,10 +1,12 @@
+use std::cmp::Ordering;
+
 use error_stack::{Result, ResultExt};
-use glam::{EulerRot, Quat, Vec3A};
+use glam::{EulerRot, Quat, Vec3A, Vec3Swizzles};
 use rust_3d::{IsNormalized3D, Line3D, Norm3D, Point3D};
 
 use crate::{
     config::{CameraProperties, Config, Device},
-    error, GError, GlamPosition, GlamQuat, ImageCoords,
+    error, GError, GlamPosition, GlamQuat, ImageCoords, ImagePosition,
 };
 
 pub const BASE_FORWARD_VECTOR: Vec3A = Vec3A::X;
@@ -101,7 +103,7 @@ fn line3d_from(line: &Line) -> Result<Line3D, GError> {
     Ok(Line3D::new(anchor, dirn))
 }
 
-pub fn get_los_dir(camera: &CameraProperties, quat_relative_to_cam: &Quat) -> Vec3A {
+fn get_los_dir(camera: &CameraProperties, quat_relative_to_cam: &Quat) -> Vec3A {
     let forward_vector = -1.0 * BASE_FORWARD_VECTOR;
     let rotation = camera.quat().mul_quat(*quat_relative_to_cam);
     rotation.mul_vec3a(forward_vector)
@@ -131,9 +133,35 @@ pub fn get_closest_device_in_los(config: &Config, line: Line) -> Option<Device> 
     closest_in_dir
 }
 
+pub fn sort_align<T: ImagePosition>(v: &mut Vec<T>, theta: f32) {
+    let y = |x: f32, y: f32| x * theta.cos() + y * theta.sin();
+    let x = |x: f32, y: f32| x * theta.sin() + y * theta.cos();
+
+    v.sort_by(|a, b| {
+        let ay = y(a.image_x(), a.image_y());
+        let by = y(b.image_x(), b.image_y());
+
+        let mut cmp = ay.partial_cmp(&by).expect("NAN IN SORT !!");
+
+        if let Ordering::Equal = cmp {
+            let ax = x(a.image_x(), a.image_y());
+            let bx = x(b.image_x(), b.image_y());
+
+            cmp = ax.partial_cmp(&bx).expect("NANI !?");
+        }
+        cmp
+    })
+}
+
+pub fn angle_bw_cameras_from_z_axis(camera1: &CameraProperties, camera2: &CameraProperties) -> f32 {
+    let rvec = *camera1.pos() - *camera2.pos();
+
+    (rvec.z / rvec.length()).acos()
+}
+
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
 
     // #[test]
     // fn test_pos_dir_vec() {
@@ -149,4 +177,19 @@ mod tests {
     //     let res = calc_pos_dir_vec(&camera, (320.0, 640.0), img_size);
     //     assert_eq!(Vec3A::new(0.86602485, 0.0, -0.5000011), res);
     // }
+
+    #[test]
+    fn test_find_yaw() {
+        let mut camera1 = CameraProperties::test_new();
+        camera1.pos_x = 3.0;
+        camera1.pos_y = 4.0;
+        camera1.pos_z = 5.0;
+
+        let mut camera2 = CameraProperties::test_new();
+        camera2.pos_x = 0.0;
+        camera2.pos_y = 0.0;
+        camera2.pos_z = 0.0;
+
+        assert_eq!(0.7853982, angle_bw_cameras_from_z_axis(&camera1, &camera2))
+    }
 }

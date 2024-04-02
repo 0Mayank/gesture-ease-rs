@@ -1,6 +1,8 @@
 use gesture_ease::config::Config;
 use gesture_ease::head_detection::HeadPreds;
-use gesture_ease::math::{calc_position, get_closest_device_in_los, get_los};
+use gesture_ease::math::{
+    angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
+};
 use gesture_ease::{GError, GesturePreds, GlamQuat, HPEPreds, ImagePosition, Models};
 use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{
@@ -43,6 +45,8 @@ fn main() {
     let mut img1 = Cursor::new(vec![]);
     let mut img2 = Cursor::new(vec![]);
 
+    let theta = angle_bw_cameras_from_z_axis(&config.camera1, &config.camera2);
+
     let mut headposes: HPEPreds = Default::default();
     let mut gestures: GesturePreds = Default::default();
     let mut head_positions: HeadPreds = Default::default();
@@ -73,9 +77,9 @@ fn main() {
         process_map.head_detection()?.send(buffer2.clone())?;
 
         head_positions = process_map.head_detection()?.recv()?;
-        head_positions.sort_by(|a, b| a.nose_x.partial_cmp(&b.nose_x).expect("NANANANANA"));
+        sort_align(&mut head_positions, theta);
         gestures = process_map.gesture()?.recv()?;
-        gestures.sort_by(|a, b| a.nose_x.partial_cmp(&b.nose_x).expect("NANI!?"));
+        sort_align(&mut gestures, theta);
 
         // check if any gesture is ok
         if gestures

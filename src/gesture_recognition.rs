@@ -143,7 +143,11 @@ impl Deref for GesturePrediction {
 }
 
 impl ImagePosition for GesturePrediction {
-    fn image_coords(&self, w: u32, h: u32) -> crate::ImageCoords {
-        crate::ImageCoords::new(self.nose_x, self.nose_y, w, h)
+    fn image_x(&self) -> f32 {
+        self.nose_x
+    }
+
+    fn image_y(&self) -> f32 {
+        self.nose_y
     }
 }
