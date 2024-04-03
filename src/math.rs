@@ -82,7 +82,8 @@ pub fn calc_pos_dir_vec(camera: &CameraProperties, coords: &ImageCoords) -> Vec3
 }
 
 pub fn get_los(camera: &CameraProperties, pos: &Vec3A, quat_relative_to_cam: &Quat) -> Line {
-    let dir = get_los_dir(camera, quat_relative_to_cam);
+    // let dir = get_los_dir_1(camera, quat_relative_to_cam);
+    let dir = get_los_dir_2(camera, pos, quat_relative_to_cam);
 
     Line::new(pos, &dir)
 }
@@ -103,10 +104,15 @@ fn line3d_from(line: &Line) -> Result<Line3D, GError> {
     Ok(Line3D::new(anchor, dirn))
 }
 
-fn get_los_dir(camera: &CameraProperties, quat_relative_to_cam: &Quat) -> Vec3A {
+fn get_los_dir_1(camera: &CameraProperties, quat_relative_to_cam: &Quat) -> Vec3A {
     let forward_vector = -1.0 * BASE_FORWARD_VECTOR;
     let rotation = camera.quat().mul_quat(*quat_relative_to_cam);
     rotation.mul_vec3a(forward_vector)
+}
+
+fn get_los_dir_2(camera: &CameraProperties, pos: &Vec3A, quat_relative_to_cam: &Quat) -> Vec3A {
+    let forward_vector = *camera.pos() - *pos;
+    quat_relative_to_cam.mul_vec3a(forward_vector)
 }
 
 pub fn get_closest_device_in_los(config: &Config, line: Line) -> Option<Device> {
