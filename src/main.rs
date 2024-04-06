@@ -2,6 +2,8 @@ use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ffimage::iter::{BytesExt, ColorConvertExt, PixelsExt};
+use ffimage_yuv::yuv::Yuv;
 use gesture_ease::config::Config;
 use gesture_ease::math::{
     angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
@@ -12,6 +14,25 @@ use libcamera::camera_manager::CameraManager;
 use libcamera::framebuffer_allocator::{FrameBuffer, FrameBufferAllocator};
 use libcamera::framebuffer_map::MemoryMappedFrameBuffer;
 use libcamera::stream::StreamRole;
+
+use ffimage::color::Rgb;
+use ffimage_yuv::yuv422::Yuyv;
+
+fn yuyv2rgb(img_data: Vec<&[u8]>) -> Arc<[u8]> {
+    let mut rgb = vec![0; img_data.len() * 3 / 2];
+    img_data
+        .concat()
+        .iter()
+        .copied()
+        .pixels::<Yuyv<u8>>()
+        .colorconvert::<[Yuv<u8>; 2]>()
+        .flatten()
+        .colorconvert::<Rgb<u8>>()
+        .bytes()
+        .write(&mut rgb);
+
+    Arc::from(rgb)
+}
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";
@@ -46,10 +67,24 @@ fn main() {
         .get_mut(0)
         .unwrap()
         .set_pixel_format(config.camera1.format.pixel_format());
+    cfgs1
+        .get_mut(0)
+        .unwrap()
+        .set_size(libcamera::geometry::Size {
+            width: config.camera1.img_width,
+            height: config.camera1.img_height,
+        });
     cfgs2
         .get_mut(0)
         .unwrap()
         .set_pixel_format(config.camera2.format.pixel_format());
+    cfgs2
+        .get_mut(0)
+        .unwrap()
+        .set_size(libcamera::geometry::Size {
+            width: config.camera2.img_width,
+            height: config.camera2.img_height,
+        });
 
     dbg!(&cfgs1);
     dbg!(&cfgs2);
@@ -120,8 +155,8 @@ fn main() {
         let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = rec1.buffer(&stream1).unwrap();
         let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = rec2.buffer(&stream2).unwrap();
 
-        let frame1: Arc<[u8]> = frame1.data().concat().into();
-        let frame2: Arc<[u8]> = frame2.data().concat().into();
+        let frame1: Arc<[u8]> = yuyv2rgb(frame1.data());
+        let frame2: Arc<[u8]> = yuyv2rgb(frame2.data());
 
         // send frame1 to gesture detection model
         process_map.gesture()?.send(
