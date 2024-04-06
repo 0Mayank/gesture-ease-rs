@@ -9,7 +9,7 @@ yaw = -0.3
 roll = 0
 img_height = 972
 img_width = 1296
-format = "RGB888"
+format = "YUYV"
 
 [camera2]
 fov_x = 0.3
@@ -22,7 +22,7 @@ yaw = 0.3
 roll = 0
 img_height = 972
 img_width = 1296
-format = "RGB888"
+format = "YUYV"
 
 [[devices]]
 name = "Fist of Family Values"
