@@ -7,6 +7,9 @@ pos_z = 0
 pitch = 0
 yaw = -0.3
 roll = 0
+img_height = 972
+img_width = 1296
+format = "RGB888"
 
 [camera2]
 fov_x = 0.3
@@ -17,6 +20,9 @@ pos_z = 3
 pitch = -0.2
 yaw = 0.3
 roll = 0
+img_height = 972
+img_width = 1296
+format = "RGB888"
 
 [[devices]]
 name = "Fist of Family Values"
