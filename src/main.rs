@@ -13,6 +13,7 @@ use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
 use libcamera::camera_manager::CameraManager;
 use libcamera::framebuffer_allocator::{FrameBuffer, FrameBufferAllocator};
 use libcamera::framebuffer_map::MemoryMappedFrameBuffer;
+use libcamera::request::ReuseFlag;
 use libcamera::stream::StreamRole;
 
 use ffimage::color::Rgb;
@@ -106,6 +107,24 @@ fn main() {
         tx2.send(req).unwrap();
     });
 
+    let mut alloc1 = FrameBufferAllocator::new(&cam1);
+    let mut alloc2 = FrameBufferAllocator::new(&cam2);
+
+    let buffer1 = alloc1
+        .alloc(&stream1)
+        .unwrap()
+        .into_iter()
+        .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
+        .last()
+        .unwrap();
+    let buffer2 = alloc2
+        .alloc(&stream2)
+        .unwrap()
+        .into_iter()
+        .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
+        .last()
+        .unwrap();
+
     cam1.start(None).unwrap();
     cam2.start(None).unwrap();
 
@@ -115,45 +134,27 @@ fn main() {
     let mut gestures: GesturePreds = Default::default();
     let mut head_positions: HeadPreds = Default::default();
 
+    let mut req1 = cam1.create_request(None).unwrap();
+    let mut req2 = cam2.create_request(None).unwrap();
+
+    req1.add_buffer(&stream1, buffer1).unwrap();
+    req2.add_buffer(&stream2, buffer2).unwrap();
+
+    cam1.queue_request(req1).unwrap();
+    cam2.queue_request(req2).unwrap();
+
     let mut run = || -> error_stack::Result<(), GError> {
         process_map.wait_for_connection();
 
-        let mut alloc1 = FrameBufferAllocator::new(&cam1);
-        let mut alloc2 = FrameBufferAllocator::new(&cam2);
-
-        let buffer1 = alloc1
-            .alloc(&stream1)
-            .unwrap()
-            .into_iter()
-            .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
-            .last()
-            .unwrap();
-        let buffer2 = alloc2
-            .alloc(&stream2)
-            .unwrap()
-            .into_iter()
-            .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
-            .last()
-            .unwrap();
-
-        let mut req1 = cam1.create_request(None).unwrap();
-        let mut req2 = cam2.create_request(None).unwrap();
-
-        req1.add_buffer(&stream1, buffer1).unwrap();
-        req2.add_buffer(&stream2, buffer2).unwrap();
-
-        cam1.queue_request(req1).unwrap();
-        cam2.queue_request(req2).unwrap();
-
-        let rec1 = rx1
+        let mut req1 = rx1
             .recv_timeout(Duration::from_secs(2))
             .expect("Camera 0 request failed");
-        let rec2 = rx2
+        let mut req2 = rx2
             .recv_timeout(Duration::from_secs(2))
             .expect("Camera 1 request failed");
 
-        let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = rec1.buffer(&stream1).unwrap();
-        let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = rec2.buffer(&stream2).unwrap();
+        let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = req1.buffer(&stream1).unwrap();
+        let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = req2.buffer(&stream2).unwrap();
 
         let frame1: Arc<[u8]> = yuyv2rgb(frame1.data());
         let frame2: Arc<[u8]> = yuyv2rgb(frame2.data());
@@ -232,6 +233,12 @@ fn main() {
                 println!("gesture {:?} on device {}", gesture, device.name);
             }
         });
+
+        req1.reuse(ReuseFlag::REUSE_BUFFERS);
+        req2.reuse(ReuseFlag::REUSE_BUFFERS);
+
+        cam1.queue_request(req1).unwrap();
+        cam2.queue_request(req2).unwrap();
 
         Ok(())
     };
