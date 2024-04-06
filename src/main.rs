@@ -1,13 +1,6 @@
-use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{
-    CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType, Resolution,
-};
-use nokhwa::Camera;
-
-use std::io::Cursor;
 use std::os::unix::net::UnixListener;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gesture_ease::config::Config;
 use gesture_ease::math::{
@@ -15,6 +8,10 @@ use gesture_ease::math::{
 };
 use gesture_ease::models::{GesturePreds, HPEPreds, HeadPreds};
 use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
+use libcamera::camera_manager::CameraManager;
+use libcamera::framebuffer_allocator::{FrameBuffer, FrameBufferAllocator};
+use libcamera::framebuffer_map::MemoryMappedFrameBuffer;
+use libcamera::stream::StreamRole;
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";
@@ -30,22 +27,52 @@ fn main() {
     let listener = UnixListener::bind(socket_path).unwrap();
     let mut process_map = Models::new(num_processes, listener);
 
-    let index1 = CameraIndex::Index(0);
-    let index2 = CameraIndex::Index(1);
-    let height = 720;
-    let width = 1280;
-    let resolution = Resolution::new(width, height);
-    let frame_format = FrameFormat::MJPEG;
-    let camera_format = CameraFormat::new(resolution, frame_format, 30);
-    let requested = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(camera_format));
+    let mgr = CameraManager::new().unwrap();
+    let cameras = mgr.cameras();
 
-    let mut camera1 = Camera::new(index1, requested).unwrap();
-    let mut camera2 = Camera::new(index2, requested).unwrap();
-    camera1.open_stream().unwrap();
-    camera2.open_stream().unwrap();
+    let cam1 = cameras.get(0).expect("Camera 0 not found");
+    let mut cam1 = cam1.acquire().expect("Unable to aquire camera 0");
+    let cam2 = cameras.get(1).expect("Camera 1 not found");
+    let mut cam2 = cam2.acquire().expect("Unable to aquire camera 1");
 
-    let mut img1 = Cursor::new(vec![]);
-    let mut img2 = Cursor::new(vec![]);
+    let mut cfgs1 = cam1
+        .generate_configuration(&[StreamRole::StillCapture])
+        .unwrap();
+    let mut cfgs2 = cam2
+        .generate_configuration(&[StreamRole::StillCapture])
+        .unwrap();
+
+    cfgs1
+        .get_mut(0)
+        .unwrap()
+        .set_pixel_format(config.camera1.format.pixel_format());
+    cfgs2
+        .get_mut(0)
+        .unwrap()
+        .set_pixel_format(config.camera2.format.pixel_format());
+
+    dbg!(&cfgs1);
+    dbg!(&cfgs2);
+
+    cam1.configure(&mut cfgs1)
+        .expect("Unable to configure camera");
+    cam2.configure(&mut cfgs2)
+        .expect("Unable to configure camera");
+
+    let stream1 = cfgs1.get(0).unwrap().stream().unwrap();
+    let stream2 = cfgs2.get(1).unwrap().stream().unwrap();
+
+    let (tx1, rx1) = std::sync::mpsc::channel();
+    cam1.on_request_completed(move |req| {
+        tx1.send(req).unwrap();
+    });
+    let (tx2, rx2) = std::sync::mpsc::channel();
+    cam2.on_request_completed(move |req| {
+        tx2.send(req).unwrap();
+    });
+
+    cam1.start(None).unwrap();
+    cam2.start(None).unwrap();
 
     let theta = angle_bw_cameras_from_z_axis(&config.camera1, &config.camera2);
 
@@ -56,27 +83,58 @@ fn main() {
     let mut run = || -> error_stack::Result<(), GError> {
         process_map.wait_for_connection();
 
-        let frame1 = camera1.frame().unwrap();
-        let frame2 = camera2.frame().unwrap();
+        let mut alloc1 = FrameBufferAllocator::new(&cam1);
+        let mut alloc2 = FrameBufferAllocator::new(&cam2);
 
-        frame1
-            .decode_image::<RgbFormat>()
+        let buffer1 = alloc1
+            .alloc(&stream1)
             .unwrap()
-            .write_to(&mut img1, image::ImageFormat::Jpeg)
+            .into_iter()
+            .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
+            .last()
             .unwrap();
-        frame2
-            .decode_image::<RgbFormat>()
+        let buffer2 = alloc2
+            .alloc(&stream2)
             .unwrap()
-            .write_to(&mut img2, image::ImageFormat::Jpeg)
+            .into_iter()
+            .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
+            .last()
             .unwrap();
 
-        let buffer1: Arc<[u8]> = img1.get_ref().to_owned().into();
-        let buffer2: Arc<[u8]> = img1.get_ref().to_owned().into();
+        let mut req1 = cam1.create_request(None).unwrap();
+        let mut req2 = cam2.create_request(None).unwrap();
+
+        req1.add_buffer(&stream1, buffer1).unwrap();
+        req2.add_buffer(&stream2, buffer2).unwrap();
+
+        cam1.queue_request(req1).unwrap();
+        cam2.queue_request(req2).unwrap();
+
+        let rec1 = rx1
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Camera 0 request failed");
+        let rec2 = rx2
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Camera 1 request failed");
+
+        let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = rec1.buffer(&stream1).unwrap();
+        let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = rec2.buffer(&stream2).unwrap();
+
+        let frame1: Arc<[u8]> = frame1.data().concat().into();
+        let frame2: Arc<[u8]> = frame2.data().concat().into();
 
         // send frame1 to gesture detection model
-        process_map.gesture()?.send(buffer1.clone())?;
+        process_map.gesture()?.send(
+            frame1.clone(),
+            config.camera1.img_width,
+            config.camera1.img_height,
+        )?;
         // send frame2 to head detection model
-        process_map.head_detection()?.send(buffer2.clone())?;
+        process_map.head_detection()?.send(
+            frame2.clone(),
+            config.camera2.img_width,
+            config.camera2.img_height,
+        )?;
 
         head_positions = process_map.head_detection()?.recv()?;
         sort_align(&mut head_positions, theta);
@@ -94,7 +152,11 @@ fn main() {
         }
 
         // send frame1 to hpe model
-        process_map.hpe()?.send(buffer1.clone())?;
+        process_map.hpe()?.send(
+            frame1.clone(),
+            config.camera1.img_width,
+            config.camera1.img_height,
+        )?;
 
         // in the meantime calculate positition of head which had a gesture
         let positions = gestures.iter().zip(head_positions.iter()).map(|(g, h)| {
@@ -102,9 +164,9 @@ fn main() {
                 Some((
                     calc_position(
                         &config.camera1,
-                        &g.image_coords(width, height),
+                        &g.image_coords(config.camera1.img_width, config.camera1.img_height),
                         &config.camera2,
-                        &h.image_coords(width, height),
+                        &h.image_coords(config.camera2.img_width, config.camera2.img_height),
                     )
                     .unwrap(),
                     g.gesture.clone(),
@@ -135,9 +197,6 @@ fn main() {
                 println!("gesture {:?} on device {}", gesture, device.name);
             }
         });
-
-        img1.set_position(0);
-        img2.set_position(0);
 
         Ok(())
     };

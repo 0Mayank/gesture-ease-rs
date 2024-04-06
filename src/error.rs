@@ -9,6 +9,7 @@ pub enum GError {
     MathError,
     ConfigError,
     ModelUninit,
+    CameraError,
 }
 
 impl fmt::Display for GError {
@@ -19,6 +20,7 @@ impl fmt::Display for GError {
             Self::ConfigError => write!(f, "Error in loading config"),
             Self::MathError => write!(f, "Error in math operation"),
             Self::ModelUninit => write!(f, "Model used before initializing"),
+            Self::CameraError => write!(f, "Camera Error"),
         }
     }
 }

@@ -11,6 +11,7 @@ use models::{GestureDetection, HeadDetection, HeadPoseEstimation};
 
 mod error;
 
+pub mod camera;
 pub mod config;
 pub mod math;
 pub mod models;

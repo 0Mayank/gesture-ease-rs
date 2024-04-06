@@ -13,8 +13,8 @@ use crate::{traits::WantIpc, GError, HasImagePosition, ImageProcessor};
 
 #[derive(Clone)]
 pub struct HeadDetection {
-    image_sender: Sender<Arc<[u8]>>,
-    image_receiver: Receiver<Arc<[u8]>>,
+    image_sender: Sender<(u32, u32, Arc<[u8]>)>,
+    image_receiver: Receiver<(u32, u32, Arc<[u8]>)>,
     response_sender: Sender<HeadPreds>,
     response_receiver: Receiver<HeadPreds>,
     unix_stream: Arc<UnixStream>,
@@ -40,9 +40,9 @@ impl HeadDetection {
         println!("Gesture Detection model connected");
 
         thread::spawn(move || loop {
-            let _img = instance.recv_img().unwrap();
+            let (w, h, _img) = instance.recv_img().unwrap();
 
-            instance.send_ipc(&_img).unwrap();
+            instance.send_ipc(&_img, w, h).unwrap();
             let res = instance.recv_ipc().unwrap();
             let res: HeadPreds = serde_json::from_slice(&res).unwrap();
 
@@ -50,8 +50,8 @@ impl HeadDetection {
         })
     }
 
-    pub fn send(&self, img: Arc<[u8]>) -> Result<(), GError> {
-        self.send_img(img)
+    pub fn send(&self, img: Arc<[u8]>, w: u32, h: u32) -> Result<(), GError> {
+        self.send_img(img, w, h)
     }
 
     pub fn recv(&self) -> Result<HeadPreds, GError> {
@@ -62,11 +62,11 @@ impl HeadDetection {
 impl ImageProcessor for HeadDetection {
     type Response = HeadPreds;
 
-    fn image_sender(&self) -> &Sender<Arc<[u8]>> {
+    fn image_sender(&self) -> &Sender<(u32, u32, Arc<[u8]>)> {
         &self.image_sender
     }
 
-    fn image_receiver(&self) -> &Receiver<Arc<[u8]>> {
+    fn image_receiver(&self) -> &Receiver<(u32, u32, Arc<[u8]>)> {
         &self.image_receiver
     }
 

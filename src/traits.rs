@@ -13,18 +13,18 @@ use crate::ImageCoords;
 pub trait ImageProcessor {
     type Response;
 
-    fn image_sender(&self) -> &Sender<Arc<[u8]>>;
-    fn image_receiver(&self) -> &Receiver<Arc<[u8]>>;
+    fn image_sender(&self) -> &Sender<(u32, u32, Arc<[u8]>)>;
+    fn image_receiver(&self) -> &Receiver<(u32, u32, Arc<[u8]>)>;
     fn response_sender(&self) -> &Sender<Self::Response>;
     fn response_receiver(&self) -> &Receiver<Self::Response>;
 
-    fn send_img(&self, img: Arc<[u8]>) -> Result<(), GError> {
+    fn send_img(&self, img: Arc<[u8]>, w: u32, h: u32) -> Result<(), GError> {
         self.image_sender()
-            .send(img)
+            .send((w, h, img))
             .change_context(GError::CommError)
     }
 
-    fn recv_img(&self) -> Result<Arc<[u8]>, GError> {
+    fn recv_img(&self) -> Result<(u32, u32, Arc<[u8]>), GError> {
         self.image_receiver()
             .recv()
             .change_context(GError::CommError)
@@ -49,9 +49,15 @@ pub trait ImageProcessor {
 pub(crate) trait WantIpc {
     fn unix_stream(&self) -> &UnixStream;
 
-    fn send_ipc(&self, msg: &[u8]) -> Result<(), GError> {
+    fn send_ipc(&self, msg: &[u8], w: u32, h: u32) -> Result<(), GError> {
         let msg_len: u32 = msg.len() as u32;
 
+        self.unix_stream()
+            .write_u32::<NetworkEndian>(w)
+            .change_context(GError::IpcError)?;
+        self.unix_stream()
+            .write_u32::<NetworkEndian>(h)
+            .change_context(GError::IpcError)?;
         self.unix_stream()
             .write_u32::<NetworkEndian>(msg_len)
             .change_context(GError::IpcError)?;
