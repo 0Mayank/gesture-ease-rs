@@ -60,7 +60,7 @@ fn main() {
         .expect("Unable to configure camera");
 
     let stream1 = cfgs1.get(0).unwrap().stream().unwrap();
-    let stream2 = cfgs2.get(1).unwrap().stream().unwrap();
+    let stream2 = cfgs2.get(0).unwrap().stream().unwrap();
 
     let (tx1, rx1) = std::sync::mpsc::channel();
     cam1.on_request_completed(move |req| {
