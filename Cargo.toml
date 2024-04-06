@@ -5,15 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.nokhwa]
-git = "https://github.com/l1npengtul/nokhwa.git"
-branch = "0.10"
-features = ["input-native"]
-
-[dependencies.image]
-version = "0.24"
-features = ["jpeg"]
-
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
