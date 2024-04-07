@@ -10,6 +10,7 @@ use gesture_ease::math::{
 };
 use gesture_ease::models::{GesturePreds, HPEPreds, HeadPreds};
 use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
+use libcamera::camera::CameraConfigurationStatus;
 use libcamera::camera_manager::CameraManager;
 use libcamera::framebuffer_allocator::{FrameBuffer, FrameBufferAllocator};
 use libcamera::framebuffer_map::MemoryMappedFrameBuffer;
@@ -87,8 +88,20 @@ fn main() {
             height: config.camera2.img_height,
         });
 
-    dbg!(&cfgs1);
-    dbg!(&cfgs2);
+    match cfgs1.validate() {
+        CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
+        CameraConfigurationStatus::Adjusted => {
+            println!("Camera configuration was adjusted: {:#?}", cfgs1)
+        }
+        CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
+    }
+    match cfgs2.validate() {
+        CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
+        CameraConfigurationStatus::Adjusted => {
+            println!("Camera configuration was adjusted: {:#?}", cfgs1)
+        }
+        CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
+    }
 
     cam1.configure(&mut cfgs1)
         .expect("Unable to configure camera");
@@ -140,12 +153,12 @@ fn main() {
     req1.add_buffer(&stream1, buffer1).unwrap();
     req2.add_buffer(&stream2, buffer2).unwrap();
 
+    process_map.wait_for_connection();
+
     cam1.queue_request(req1).unwrap();
     cam2.queue_request(req2).unwrap();
 
     let mut run = || -> error_stack::Result<(), GError> {
-        process_map.wait_for_connection();
-
         let mut req1 = rx1
             .recv_timeout(Duration::from_secs(2))
             .expect("Camera 0 request failed");
@@ -155,6 +168,11 @@ fn main() {
 
         let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = req1.buffer(&stream1).unwrap();
         let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = req2.buffer(&stream2).unwrap();
+
+        println!("getting planes");
+        dbg!(frame1.data().get(0).unwrap().len());
+        dbg!(frame1.data().get(1).unwrap().len());
+        println!("got planes");
 
         let frame1: Arc<[u8]> = yuyv2rgb(frame1.data());
         let frame2: Arc<[u8]> = yuyv2rgb(frame2.data());
@@ -177,62 +195,60 @@ fn main() {
         gestures = process_map.gesture()?.recv()?;
         sort_align(&mut gestures, theta);
 
-        // check if any gesture is ok
+        // check if any gesture is not none
         if gestures
             .iter()
             .map(|x| &x.gesture)
             .find(|x| x.is_toggle())
             .is_some()
         {
-            return Ok(());
+            // send frame1 to hpe model
+            process_map.hpe()?.send(
+                frame1.clone(),
+                config.camera1.img_width,
+                config.camera1.img_height,
+            )?;
+
+            // in the meantime calculate positition of head which had a gesture
+            let positions = gestures.iter().zip(head_positions.iter()).map(|(g, h)| {
+                if !g.is_none() {
+                    Some((
+                        calc_position(
+                            &config.camera1,
+                            &g.image_coords(config.camera1.img_width, config.camera1.img_height),
+                            &config.camera2,
+                            &h.image_coords(config.camera2.img_width, config.camera2.img_height),
+                        )
+                        .unwrap(),
+                        g.gesture.clone(),
+                    ))
+                } else {
+                    None
+                }
+            });
+
+            headposes = process_map.hpe().unwrap().recv().unwrap();
+            sort_align(&mut headposes, theta);
+
+            // Now get the device in line of sight of each head
+            let devices = headposes.iter().zip(positions).map(|(pose, position)| {
+                let (position, gesture) = if let Some((position, gesture)) = position {
+                    (position, gesture)
+                } else {
+                    return None;
+                };
+
+                let line_of_sight = get_los(&config.camera1, &position, &pose.quat());
+
+                get_closest_device_in_los(&config, line_of_sight).map(|x| (x, gesture))
+            });
+
+            devices.for_each(|x| {
+                if let Some((device, gesture)) = x {
+                    println!("gesture {:?} on device {}", gesture, device.name);
+                }
+            });
         }
-
-        // send frame1 to hpe model
-        process_map.hpe()?.send(
-            frame1.clone(),
-            config.camera1.img_width,
-            config.camera1.img_height,
-        )?;
-
-        // in the meantime calculate positition of head which had a gesture
-        let positions = gestures.iter().zip(head_positions.iter()).map(|(g, h)| {
-            if !g.is_none() {
-                Some((
-                    calc_position(
-                        &config.camera1,
-                        &g.image_coords(config.camera1.img_width, config.camera1.img_height),
-                        &config.camera2,
-                        &h.image_coords(config.camera2.img_width, config.camera2.img_height),
-                    )
-                    .unwrap(),
-                    g.gesture.clone(),
-                ))
-            } else {
-                None
-            }
-        });
-
-        headposes = process_map.hpe().unwrap().recv().unwrap();
-        sort_align(&mut headposes, theta);
-
-        // Now get the device in line of sight of each head
-        let devices = headposes.iter().zip(positions).map(|(pose, position)| {
-            let (position, gesture) = if let Some((position, gesture)) = position {
-                (position, gesture)
-            } else {
-                return None;
-            };
-
-            let line_of_sight = get_los(&config.camera1, &position, &pose.quat());
-
-            get_closest_device_in_los(&config, line_of_sight).map(|x| (x, gesture))
-        });
-
-        devices.for_each(|x| {
-            if let Some((device, gesture)) = x {
-                println!("gesture {:?} on device {}", gesture, device.name);
-            }
-        });
 
         req1.reuse(ReuseFlag::REUSE_BUFFERS);
         req2.reuse(ReuseFlag::REUSE_BUFFERS);
