@@ -101,6 +101,6 @@ impl WantIpc for CameraProc {
 
 #[derive(Default, Debug, Deserialize)]
 pub struct Frames {
-    pub cam1: Vec<u8>,
-    pub cam2: Vec<u8>,
+    pub cam1: String,
+    pub cam2: String,
 }

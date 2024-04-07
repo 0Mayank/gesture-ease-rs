@@ -2,6 +2,8 @@ use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::Instant;
 
+use base64::prelude::*;
+use error_stack::ResultExt;
 use gesture_ease::config::Config;
 use gesture_ease::math::{
     angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
@@ -34,8 +36,14 @@ fn main() {
     let mut run = || -> error_stack::Result<(), GError> {
         let frames = process_map.cams()?.get()?;
 
-        let frame1: Arc<[u8]> = frames.cam1.into();
-        let frame2: Arc<[u8]> = frames.cam2.into();
+        let frame1: Arc<[u8]> = BASE64_STANDARD
+            .decode(frames.cam1)
+            .change_context(GError::CameraError)?
+            .into();
+        let frame2: Arc<[u8]> = BASE64_STANDARD
+            .decode(frames.cam2)
+            .change_context(GError::CameraError)?
+            .into();
 
         // send frame1 to gesture detection model
         process_map.gesture()?.send(
