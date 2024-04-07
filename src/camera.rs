@@ -63,11 +63,8 @@ impl CameraProc {
         })
     }
 
-    pub fn send(&self, sig: u32) -> Result<(), GError> {
-        self.send_data(sig)
-    }
-
-    pub fn recv(&self) -> Result<Frames, GError> {
+    pub fn get(&self) -> Result<Frames, GError> {
+        self.send_data(1)?;
         self.recv_response()
     }
 }

@@ -32,7 +32,7 @@ fn main() {
     process_map.wait_for_connection(&config);
 
     let mut run = || -> error_stack::Result<(), GError> {
-        let frames = process_map.cams()?.recv()?;
+        let frames = process_map.cams()?.get()?;
 
         let frame1: Arc<[u8]> = frames.cam1.into();
         let frame2: Arc<[u8]> = frames.cam2.into();
