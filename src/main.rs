@@ -169,11 +169,6 @@ fn main() {
         let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = req1.buffer(&stream1).unwrap();
         let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = req2.buffer(&stream2).unwrap();
 
-        println!("getting planes");
-        dbg!(frame1.data().get(0).unwrap().len());
-        dbg!(frame1.data().get(1).unwrap().len());
-        println!("got planes");
-
         let frame1: Arc<[u8]> = yuyv2rgb(frame1.data());
         let frame2: Arc<[u8]> = yuyv2rgb(frame2.data());
 
@@ -191,9 +186,7 @@ fn main() {
         )?;
 
         head_positions = process_map.head_detection()?.recv()?;
-        sort_align(&mut head_positions, theta);
         gestures = process_map.gesture()?.recv()?;
-        sort_align(&mut gestures, theta);
 
         // check if any gesture is not none
         if gestures
@@ -209,6 +202,8 @@ fn main() {
                 config.camera1.img_height,
             )?;
 
+            sort_align(&mut head_positions, theta);
+            sort_align(&mut gestures, theta);
             // in the meantime calculate positition of head which had a gesture
             let positions = gestures.iter().zip(head_positions.iter()).map(|(g, h)| {
                 if !g.is_none() {
