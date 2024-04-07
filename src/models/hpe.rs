@@ -9,7 +9,10 @@ use error_stack::Result;
 use flume::{unbounded, Receiver, Sender};
 use serde::Deserialize;
 
-use crate::{traits::WantIpc, GError, HasGlamQuat, HasImagePosition, ImageProcessor};
+use crate::{
+    traits::{Responder, WantIpc},
+    GError, HasGlamQuat, HasImagePosition, ImageProcessor,
+};
 
 #[derive(Clone)]
 pub struct HeadPoseEstimation {
@@ -60,8 +63,6 @@ impl HeadPoseEstimation {
 }
 
 impl ImageProcessor for HeadPoseEstimation {
-    type Response = HPEPreds;
-
     fn image_sender(&self) -> &Sender<(u32, u32, Arc<[u8]>)> {
         &self.image_sender
     }
@@ -69,6 +70,10 @@ impl ImageProcessor for HeadPoseEstimation {
     fn image_receiver(&self) -> &Receiver<(u32, u32, Arc<[u8]>)> {
         &self.image_receiver
     }
+}
+
+impl Responder for HeadPoseEstimation {
+    type Response = HPEPreds;
 
     fn response_sender(&self) -> &Sender<Self::Response> {
         &self.response_sender

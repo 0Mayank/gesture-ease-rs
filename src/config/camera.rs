@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use glam::{EulerRot, Quat, Vec3A};
 use serde::Deserialize;
 
-use crate::{camera::Format, HasGlamPosition, HasGlamQuat};
+use crate::{HasGlamPosition, HasGlamQuat};
 
 #[derive(Deserialize, Debug)]
 pub struct CameraProperties {
@@ -18,7 +18,6 @@ pub struct CameraProperties {
     pub roll: f32,
     pub img_height: u32,
     pub img_width: u32,
-    pub format: Format,
     #[serde(skip)]
     quat: OnceLock<Quat>,
     #[serde(skip)]
@@ -40,7 +39,6 @@ impl CameraProperties {
             roll: 0.0,
             img_height: 720,
             img_width: 1280,
-            format: Format::RGB888,
             quat: OnceLock::new(),
             dir_vec: OnceLock::new(),
             pos: OnceLock::new(),
@@ -89,7 +87,6 @@ mod tests {
             roll: -0.69,
             img_height: 720,
             img_width: 1280,
-            format: Format::RGB888,
             quat: OnceLock::new(),
             dir_vec: OnceLock::new(),
             pos: OnceLock::new(),

@@ -11,12 +11,8 @@ use crate::GError;
 use crate::ImageCoords;
 
 pub trait ImageProcessor {
-    type Response;
-
     fn image_sender(&self) -> &Sender<(u32, u32, Arc<[u8]>)>;
     fn image_receiver(&self) -> &Receiver<(u32, u32, Arc<[u8]>)>;
-    fn response_sender(&self) -> &Sender<Self::Response>;
-    fn response_receiver(&self) -> &Receiver<Self::Response>;
 
     fn send_img(&self, img: Arc<[u8]>, w: u32, h: u32) -> Result<(), GError> {
         self.image_sender()
@@ -26,21 +22,6 @@ pub trait ImageProcessor {
 
     fn recv_img(&self) -> Result<(u32, u32, Arc<[u8]>), GError> {
         self.image_receiver()
-            .recv()
-            .change_context(GError::CommError)
-    }
-
-    // TODO: try without map_err
-    fn send_response(&self, res: Self::Response) -> Result<(), GError> {
-        self.response_sender()
-            .send(res)
-            .map_err(|_| GError::CommError)
-            .change_context(GError::CommError)
-            .attach("Failed to send response")
-    }
-
-    fn recv_response(&self) -> Result<Self::Response, GError> {
-        self.response_receiver()
             .recv()
             .change_context(GError::CommError)
     }
@@ -92,6 +73,12 @@ pub(crate) trait WantIpc {
 
         Ok(msg)
     }
+
+    fn send_u32(&self, data: u32) -> Result<(), GError> {
+        self.unix_stream()
+            .write_u32::<NetworkEndian>(data)
+            .change_context(GError::IpcError)
+    }
 }
 
 pub trait HasGlamPosition {
@@ -108,4 +95,47 @@ pub trait HasImagePosition {
     }
     fn image_x(&self) -> f32;
     fn image_y(&self) -> f32;
+}
+
+pub trait GenProcess {
+    type Send;
+
+    fn data_sender(&self) -> &Sender<Self::Send>;
+    fn data_receiver(&self) -> &Receiver<Self::Send>;
+
+    fn send_data(&self, data: Self::Send) -> Result<(), GError> {
+        self.data_sender()
+            .send(data)
+            .map_err(|_| GError::CommError)
+            .change_context(GError::CommError)
+            .attach("Failed to send data")
+    }
+
+    fn recv_data(&self) -> Result<Self::Send, GError> {
+        self.data_receiver()
+            .recv()
+            .change_context(GError::CommError)
+    }
+}
+
+pub trait Responder {
+    type Response;
+
+    fn response_sender(&self) -> &Sender<Self::Response>;
+    fn response_receiver(&self) -> &Receiver<Self::Response>;
+
+    // TODO: try without map_err
+    fn send_response(&self, res: Self::Response) -> Result<(), GError> {
+        self.response_sender()
+            .send(res)
+            .map_err(|_| GError::CommError)
+            .change_context(GError::CommError)
+            .attach("Failed to send response")
+    }
+
+    fn recv_response(&self) -> Result<Self::Response, GError> {
+        self.response_receiver()
+            .recv()
+            .change_context(GError::CommError)
+    }
 }

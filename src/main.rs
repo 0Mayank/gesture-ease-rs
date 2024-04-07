@@ -1,6 +1,6 @@
 use std::os::unix::net::UnixListener;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use gesture_ease::config::Config;
 use gesture_ease::math::{
@@ -8,16 +8,10 @@ use gesture_ease::math::{
 };
 use gesture_ease::models::{GesturePreds, HPEPreds, HeadPreds};
 use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
-use libcamera::camera::CameraConfigurationStatus;
-use libcamera::camera_manager::CameraManager;
-use libcamera::framebuffer_allocator::{FrameBuffer, FrameBufferAllocator};
-use libcamera::framebuffer_map::MemoryMappedFrameBuffer;
-use libcamera::request::ReuseFlag;
-use libcamera::stream::StreamRole;
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";
-    let num_processes = 3;
+    let num_processes = 4;
 
     if std::fs::metadata(socket_path).is_ok() {
         println!("Socket is already present. Deleting...");
@@ -29,127 +23,19 @@ fn main() {
     let listener = UnixListener::bind(socket_path).unwrap();
     let mut process_map = Models::new(num_processes, listener);
 
-    let mgr = CameraManager::new().unwrap();
-    let cameras = mgr.cameras();
-
-    let cam1 = cameras.get(0).expect("Camera 0 not found");
-    let mut cam1 = cam1.acquire().expect("Unable to aquire camera 0");
-    let cam2 = cameras.get(1).expect("Camera 1 not found");
-    let mut cam2 = cam2.acquire().expect("Unable to aquire camera 1");
-
-    let mut cfgs1 = cam1
-        .generate_configuration(&[StreamRole::StillCapture])
-        .unwrap();
-    let mut cfgs2 = cam2
-        .generate_configuration(&[StreamRole::StillCapture])
-        .unwrap();
-
-    cfgs1
-        .get_mut(0)
-        .unwrap()
-        .set_pixel_format(config.camera1.format.pixel_format());
-    cfgs1
-        .get_mut(0)
-        .unwrap()
-        .set_size(libcamera::geometry::Size {
-            width: config.camera1.img_width,
-            height: config.camera1.img_height,
-        });
-    cfgs2
-        .get_mut(0)
-        .unwrap()
-        .set_pixel_format(config.camera2.format.pixel_format());
-    cfgs2
-        .get_mut(0)
-        .unwrap()
-        .set_size(libcamera::geometry::Size {
-            width: config.camera2.img_width,
-            height: config.camera2.img_height,
-        });
-
-    match cfgs1.validate() {
-        CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
-        CameraConfigurationStatus::Adjusted => {
-            println!("Camera configuration was adjusted: {:#?}", cfgs1)
-        }
-        CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
-    }
-    match cfgs2.validate() {
-        CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
-        CameraConfigurationStatus::Adjusted => {
-            println!("Camera configuration was adjusted: {:#?}", cfgs1)
-        }
-        CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
-    }
-
-    cam1.configure(&mut cfgs1)
-        .expect("Unable to configure camera");
-    cam2.configure(&mut cfgs2)
-        .expect("Unable to configure camera");
-
-    let stream1 = cfgs1.get(0).unwrap().stream().unwrap();
-    let stream2 = cfgs2.get(0).unwrap().stream().unwrap();
-
-    let (tx1, rx1) = std::sync::mpsc::channel();
-    cam1.on_request_completed(move |req| {
-        tx1.send(req).unwrap();
-    });
-    let (tx2, rx2) = std::sync::mpsc::channel();
-    cam2.on_request_completed(move |req| {
-        tx2.send(req).unwrap();
-    });
-
-    let mut alloc1 = FrameBufferAllocator::new(&cam1);
-    let mut alloc2 = FrameBufferAllocator::new(&cam2);
-
-    let buffer1 = alloc1
-        .alloc(&stream1)
-        .unwrap()
-        .into_iter()
-        .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
-        .last()
-        .unwrap();
-    let buffer2 = alloc2
-        .alloc(&stream2)
-        .unwrap()
-        .into_iter()
-        .map(|buf| MemoryMappedFrameBuffer::new(buf).unwrap())
-        .last()
-        .unwrap();
-
-    cam1.start(None).unwrap();
-    cam2.start(None).unwrap();
-
     let theta = angle_bw_cameras_from_z_axis(&config.camera1, &config.camera2);
 
     let mut headposes: HPEPreds = Default::default();
     let mut gestures: GesturePreds = Default::default();
     let mut head_positions: HeadPreds = Default::default();
 
-    let mut req1 = cam1.create_request(None).unwrap();
-    let mut req2 = cam2.create_request(None).unwrap();
-
-    req1.add_buffer(&stream1, buffer1).unwrap();
-    req2.add_buffer(&stream2, buffer2).unwrap();
-
-    process_map.wait_for_connection();
-
-    cam1.queue_request(req1).unwrap();
-    cam2.queue_request(req2).unwrap();
+    process_map.wait_for_connection(&config);
 
     let mut run = || -> error_stack::Result<(), GError> {
-        let mut req1 = rx1
-            .recv_timeout(Duration::from_secs(2))
-            .expect("Camera 0 request failed");
-        let mut req2 = rx2
-            .recv_timeout(Duration::from_secs(2))
-            .expect("Camera 1 request failed");
+        let frames = process_map.cams()?.recv()?;
 
-        let frame1: &MemoryMappedFrameBuffer<FrameBuffer> = req1.buffer(&stream1).unwrap();
-        let frame2: &MemoryMappedFrameBuffer<FrameBuffer> = req2.buffer(&stream2).unwrap();
-
-        let frame1: Arc<[u8]> = frame1.data().concat().into();
-        let frame2: Arc<[u8]> = frame2.data().concat().into();
+        let frame1: Arc<[u8]> = frames.cam1.into();
+        let frame2: Arc<[u8]> = frames.cam2.into();
 
         // send frame1 to gesture detection model
         process_map.gesture()?.send(
@@ -223,12 +109,6 @@ fn main() {
                 }
             });
         }
-
-        req1.reuse(ReuseFlag::REUSE_BUFFERS);
-        req2.reuse(ReuseFlag::REUSE_BUFFERS);
-
-        cam1.queue_request(req1).unwrap();
-        cam2.queue_request(req2).unwrap();
 
         Ok(())
     };

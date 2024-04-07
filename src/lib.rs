@@ -1,3 +1,5 @@
+use camera::CameraProc;
+use config::Config;
 use error_stack::{Result, ResultExt};
 use std::{
     collections::HashSet,
@@ -59,40 +61,44 @@ impl ImageCoords {
 }
 
 #[derive(PartialEq, Eq, Hash)]
-pub enum Model {
+pub enum Process {
     HPE,
     GestureRecognition,
     HeadDetection,
+    Camera,
 }
 
-impl From<&str> for Model {
+impl From<&str> for Process {
     fn from(value: &str) -> Self {
         match value {
             "hpe" | "directmhp" => Self::HPE,
             "ge" | "gesture" => Self::GestureRecognition,
             "head" => Self::HeadDetection,
+            "cam" => Self::Camera,
             _ => panic!("invalid"),
         }
     }
 }
 
-impl fmt::Display for Model {
+impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HPE => write!(f, "hpe"),
             Self::HeadDetection => write!(f, "head"),
             Self::GestureRecognition => write!(f, "gesture"),
+            Self::Camera => write!(f, "cam"),
         }
     }
 }
 
 pub struct Models {
-    pset: HashSet<Model>,
+    pset: HashSet<Process>,
     num: usize,
     listener: UnixListener,
     hpe: Option<HeadPoseEstimation>,
     gesture: Option<GestureDetection>,
     head: Option<HeadDetection>,
+    cams: Option<CameraProc>,
 }
 
 impl Models {
@@ -102,6 +108,7 @@ impl Models {
             hpe: None,
             gesture: None,
             head: None,
+            cams: None,
             num,
             listener,
         }
@@ -131,28 +138,49 @@ impl Models {
         }
     }
 
-    pub fn add_model_process(&mut self, model: Model, stream: UnixStream) {
+    pub fn cams(&self) -> Result<CameraProc, GError> {
+        if let Some(cams) = &self.cams {
+            Ok(cams.clone())
+        } else {
+            Err(GError::ModelUninit).change_context(GError::ModelUninit)
+        }
+    }
+
+    pub fn add_process(&mut self, model: Process, stream: UnixStream, config: &Config) {
         match model {
-            Model::HPE => {
+            Process::HPE => {
                 let model = HeadPoseEstimation::new(stream);
 
                 model.run();
 
                 self.hpe = Some(model);
             }
-            Model::GestureRecognition => {
+            Process::GestureRecognition => {
                 let model = GestureDetection::new(stream);
 
                 model.run();
 
                 self.gesture = Some(model)
             }
-            Model::HeadDetection => {
+            Process::HeadDetection => {
                 let model = HeadDetection::new(stream);
 
                 model.run();
 
                 self.head = Some(model)
+            }
+            Process::Camera => {
+                let camp = CameraProc::new(
+                    stream,
+                    config.camera1.img_width,
+                    config.camera1.img_height,
+                    config.camera2.img_width,
+                    config.camera2.img_height,
+                );
+
+                camp.run();
+
+                self.cams = Some(camp)
             }
         }
         self.pset.insert(model);
@@ -162,17 +190,17 @@ impl Models {
         self.pset.len()
     }
 
-    pub fn wait_for_connection(&mut self) {
+    pub fn wait_for_connection(&mut self, config: &Config) {
         while self.len() < self.num {
             let (mut stream, _addr) = self.listener.accept().unwrap();
 
             let mut buffer = [0; 1024];
             let bytes_read = stream.read(&mut buffer).unwrap();
-            let model: Model = String::from_utf8_lossy(&buffer[..bytes_read])
+            let model: Process = String::from_utf8_lossy(&buffer[..bytes_read])
                 .as_ref()
                 .into();
 
-            self.add_model_process(model, stream);
+            self.add_process(model, stream, config);
             println!("Processes connected: {}", self.len())
         }
     }
