@@ -37,7 +37,7 @@ impl HeadDetection {
 
     pub fn run(&self) -> JoinHandle<()> {
         let instance = self.clone();
-        println!("Gesture Detection model connected");
+        println!("Head Detection model connected");
 
         thread::spawn(move || loop {
             let (w, h, _img) = instance.recv_img().unwrap();
