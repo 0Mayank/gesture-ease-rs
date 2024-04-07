@@ -56,8 +56,14 @@ impl CameraProc {
             let sig = instance.recv_data().unwrap();
 
             instance.send_u32(sig).unwrap();
-            let res = instance.recv_ipc().unwrap();
-            let res: Frames = serde_json::from_slice(&res).unwrap();
+            let img1 = instance.recv_ipc().unwrap();
+            instance.send_u32(2).unwrap();
+            let img2 = instance.recv_ipc().unwrap();
+
+            let res = Frames {
+                cam1: img1,
+                cam2: img2,
+            };
 
             instance.send_response(res).unwrap();
         })
@@ -101,6 +107,6 @@ impl WantIpc for CameraProc {
 
 #[derive(Default, Debug, Deserialize)]
 pub struct Frames {
-    pub cam1: String,
-    pub cam2: String,
+    pub cam1: Vec<u8>,
+    pub cam2: Vec<u8>,
 }

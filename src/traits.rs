@@ -53,22 +53,21 @@ pub(crate) trait WantIpc {
     fn recv_ipc(&self) -> Result<Vec<u8>, GError> {
         let mut msg = vec![];
 
-        let msg_len = self
+        let mut msg_len = self
             .unix_stream()
             .read_u32::<NetworkEndian>()
             .change_context(GError::IpcError)? as usize;
 
-        let mut buf = [0; 1024];
+        let mut buf = [0; 10000];
 
-        let mut bytes_read = 0;
-
-        while bytes_read < msg_len {
-            bytes_read = self
+        while msg_len > 0 {
+            let bytes_read = self
                 .unix_stream()
                 .read(&mut buf)
                 .change_context(GError::IpcError)?;
 
             msg.extend_from_slice(&buf[..bytes_read]);
+            msg_len -= bytes_read
         }
 
         Ok(msg)
