@@ -4,10 +4,12 @@ use std::time::Instant;
 
 use gesture_ease::config::Config;
 use gesture_ease::math::{
-    angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los, get_los, sort_align,
+    angle_bw_cameras_from_z_axis, calc_position, get_closest_device_in_los_alt, get_los, sort_align,
 };
 use gesture_ease::models::{GesturePreds, HPEPreds, HeadPreds};
 use gesture_ease::{GError, HasGlamQuat, HasImagePosition, Models};
+
+use rppal::gpio::Gpio;
 
 fn main() {
     let socket_path = "/tmp/gesurease.sock";
@@ -28,6 +30,15 @@ fn main() {
     let mut headposes: HPEPreds = Default::default();
     let mut gestures: GesturePreds = Default::default();
     let mut head_positions: HeadPreds = Default::default();
+    let mut prev_gestures: GesturePreds = Default::default();
+
+    let gpio = Gpio::new().unwrap();
+
+    for device in &config.devices {
+        let mut pin = gpio.get(device.pin).unwrap().into_output();
+        pin.set_reset_on_drop(false);
+        pin.set_high();
+    }
 
     process_map.wait_for_connection(&config);
 
@@ -52,13 +63,15 @@ fn main() {
 
         head_positions = process_map.head_detection()?.recv()?;
         gestures = process_map.gesture()?.recv()?;
+        //dbg!(&gestures);
+        //     dbg!(&head_positions);
 
         // check if any gesture is not none
-        if true
-            || gestures
+        if gestures.iter().find(|x| !x.is_none()).is_some()
+            && !prev_gestures
                 .iter()
-                .map(|x| &x.gesture)
-                .find(|x| x.is_toggle())
+                .zip(gestures.iter())
+                .find(|(ref a, ref b)| a.gesture == b.gesture)
                 .is_some()
         {
             // send frame1 to hpe model
@@ -88,9 +101,12 @@ fn main() {
                 }
             });
 
+            //     dbg!(&positions);
+
             headposes = process_map.hpe().unwrap().recv().unwrap();
             sort_align(&mut headposes, theta);
 
+            //dbg!(&headposes);
             // Now get the device in line of sight of each head
             let devices = headposes.iter().zip(positions).map(|(pose, position)| {
                 let (position, gesture) = if let Some((position, gesture)) = position {
@@ -100,17 +116,24 @@ fn main() {
                 };
 
                 let line_of_sight = get_los(&config.camera1, &position, &pose.quat());
-
-                get_closest_device_in_los(&config, line_of_sight).map(|x| (x, gesture))
+                //dbg!(&line_of_sight);
+                get_closest_device_in_los_alt(&config, line_of_sight).map(|x| (x, gesture))
             });
 
+            //   dbg!(&devices);
             devices.for_each(|x| {
                 if let Some((device, gesture)) = x {
                     println!("gesture {:?} on device {}", gesture, device.name);
+                    let mut pin = gpio.get(device.pin).unwrap().into_output();
+                    pin.set_reset_on_drop(false);
+                    pin.toggle();
+                    println!("pin state: {}", pin.is_set_low());
+                    std::thread::sleep(std::time::Duration::from_secs(3));
                 }
             });
         }
 
+        prev_gestures = gestures.clone();
         Ok(())
     };
 
@@ -119,5 +142,6 @@ fn main() {
         run().unwrap();
         let duration = Instant::now().duration_since(start).as_millis();
         println!("duration in ms: {}", duration);
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }

@@ -12,6 +12,7 @@ use crate::{
 pub const BASE_FORWARD_VECTOR: Vec3A = Vec3A::X;
 pub const EPSILON: f32 = 0.000001; // what should this be
 
+#[derive(Debug)]
 pub struct Line {
     anchor: Vec3A,
     dir: Vec3A,
@@ -42,6 +43,12 @@ impl Line {
             other.anchor + ((self.anchor - other.anchor).dot(n1) / other.dir.dot(n1)) * other.dir;
 
         Ok(c1.midpoint(c2))
+    }
+
+    pub fn distance_from_point(&self, point: Vec3A) -> f32 {
+        let x = point - self.anchor;
+        let y = x.dot(self.dir);
+        (x - y * self.dir).length()
     }
 }
 
@@ -105,7 +112,8 @@ fn line3d_from(line: &Line) -> Result<Line3D, GError> {
 }
 
 fn get_los_dir(camera: &CameraProperties, pos: &Vec3A, quat_relative_to_cam: &Quat) -> Vec3A {
-    let forward_vector = *camera.pos() - *pos;
+    let forward_vector = (*camera.pos() - *pos).normalize();
+    //dbg!(forward_vector);
     quat_relative_to_cam.mul_vec3a(forward_vector)
 }
 
@@ -131,6 +139,23 @@ pub fn get_closest_device_in_los(config: &Config, line: Line) -> Option<Device> 
     });
 
     closest_in_dir
+}
+
+pub fn get_closest_device_in_los_alt(config: &Config, line: Line) -> Option<Device> {
+    config
+        .devices
+        .iter()
+        .map(|dev| (line.distance_from_point(*dev.pos()), dev))
+        .min_by(|(p1, _), (p2, _)| p1.partial_cmp(p2).unwrap())
+        .map(|(_, dev)| dev)
+        .cloned()
+        .map(|dev| {
+            let relative_vec = *dev.pos_mean() - line.anchor;
+            if line.dir.dot(relative_vec) < 0.0 {
+                return None;
+            }
+            Some(dev)
+        })?
 }
 
 pub fn sort_align<T: HasImagePosition>(v: &mut Vec<T>, theta: f32) {

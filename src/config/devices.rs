@@ -1,14 +1,17 @@
 use std::sync::OnceLock;
 
 use glam::Vec3A;
+use rppal::gpio::{Gpio, OutputPin};
 use rust_3d::{BoundingBox3D, HasBoundingBox3D, HasBoundingBox3DMaybe, Point3D};
 use serde::Deserialize;
+use std::sync::{Arc, Mutex};
 
 use crate::HasGlamPosition;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Device {
     pub name: String,
+    pub pin: u8,
     min_x: f32,
     min_y: f32,
     min_z: f32,
@@ -17,6 +20,8 @@ pub struct Device {
     max_z: f32,
     #[serde(skip)]
     pos: OnceLock<Vec3A>,
+    #[serde(skip)]
+    gpio: OnceLock<Arc<Mutex<OutputPin>>>,
 }
 
 impl Device {
@@ -28,6 +33,16 @@ impl Device {
                 (self.min_z + self.max_z) / 2.0,
             )
         })
+    }
+
+    pub fn get_gpio(&self) -> Arc<Mutex<OutputPin>> {
+        self.gpio
+            .get_or_init(|| {
+                let mut p = Gpio::new().unwrap().get(self.pin).unwrap().into_output();
+                p.set_low();
+                Arc::new(Mutex::new(p))
+            })
+            .clone()
     }
 }
 

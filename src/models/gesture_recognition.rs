@@ -90,7 +90,7 @@ impl WantIpc for GestureDetection {
     }
 }
 
-#[derive(Default, Debug, Deserialize)]
+#[derive(Default, Debug, Deserialize, Clone)]
 pub struct GesturePreds {
     pub prediction: Vec<GesturePrediction>,
 }
@@ -109,7 +109,7 @@ impl DerefMut for GesturePreds {
     }
 }
 
-#[derive(Default, Debug, Deserialize, Clone)]
+#[derive(Default, Debug, Deserialize, Clone, PartialEq, Eq)]
 pub enum Gesture {
     Toggle,
     #[default]
@@ -132,7 +132,7 @@ impl Gesture {
     }
 }
 
-#[derive(Default, Debug, Deserialize)]
+#[derive(Default, Debug, Deserialize, Clone, PartialEq)]
 pub struct GesturePrediction {
     pub nose_x: f32,
     pub nose_y: f32,
